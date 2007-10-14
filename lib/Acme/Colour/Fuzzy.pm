@@ -26,10 +26,10 @@ triplet.
 use strict;
 use base qw(Class::Accessor::Fast);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 use Graphics::ColorNames qw(hex2tuple);
-use Color::Similarity::HCL qw(distance_hcl rgb2hcl);
+use Color::Similarity;
 use List::Util qw(max);
 
 __PACKAGE__->mk_ro_accessors( qw(scheme colours) );
@@ -47,8 +47,11 @@ with 'VACCC' as default.
 =cut
 
 sub new {
-    my( $class, $scheme ) = @_;
+    my( $class, $scheme, $distance ) = @_;
     $scheme ||= 'VACCC';
+    $distance ||= 'Color::Similarity::HCL';
+
+    my $similarity = Color::Similarity->new( $distance );
 
     # remove duplicates, favour longer names
     tie my %name2rgb, 'Graphics::ColorNames', $scheme;
@@ -62,8 +65,9 @@ sub new {
     }
     my %unique = reverse %rgb2name;
 
-    my $self = $class->SUPER::new( { scheme  => $scheme,
-                                     colours => \%unique,
+    my $self = $class->SUPER::new( { scheme   => $scheme,
+                                     colours  => \%unique,
+                                     distance => $similarity,
                                      } );
 
     return $self;
@@ -85,14 +89,15 @@ one. Each element of the list is an hash with the following structure:
 
 sub colour_approximations {
     my( $self, $ir, $ig, $ib, $count ) = @_;
-    my( $ih, $ic, $il ) = rgb2hcl( $ir, $ig, $ib );
+    my $cdist = $self->{distance};
+    my $ic = $cdist->convert_rgb( $ir, $ig, $ib );
 
     my @res;
     while( my( $name, $rgb ) = each %{$self->colours} ) {
         my( $nr, $ng, $nb ) = hex2tuple( $rgb );
-        my( $nh, $nc, $nl ) = rgb2hcl( $nr, $ng, $nb );
+        my $nc = $cdist->convert_rgb( $nr, $ng, $nb );
 
-        my $dist = distance_hcl( [ $ih, $ic, $il ], [ $nh, $nc, $nl ] );
+        my $dist = $cdist->distance( $ic, $nc );
         push @res, { distance => $dist,
                      name     => $name,
                      rgb      => [ $nr, $ng, $nb ],
